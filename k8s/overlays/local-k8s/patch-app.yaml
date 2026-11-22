@@ -1,0 +1,7 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiops-sample-app
+  namespace: aiops-auditor
+spec:
+  replicas: 1

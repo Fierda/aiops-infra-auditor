@@ -5,5 +5,5 @@ resources:
   - ../../base
 
 patches:
-  - path: patch-onprem-nvidia.yaml
-
+  - path: patch-configmap.yaml
+  - path: patch-ollama.yaml

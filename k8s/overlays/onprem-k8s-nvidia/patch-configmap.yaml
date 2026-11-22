@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiops-auditor-config
+  namespace: aiops-auditor
+data:
+  AIOPS_MODEL_PROFILE: "prod-16gb-coder"
+  AIOPS_ENABLE_OSV_LOOKUP: "true"
+  OLLAMA_FLASH_ATTENTION: "1"
+  OLLAMA_KV_CACHE_TYPE: "q8_0"

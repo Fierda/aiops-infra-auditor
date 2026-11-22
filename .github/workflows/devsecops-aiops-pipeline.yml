@@ -97,8 +97,8 @@ jobs:
 
       - name: Validate Terraform (AWS + Platform-Agnostic K8s/NVIDIA)
         run: |
-          cd infra/terraform && terraform fmt -check -recursive && terraform init -backend=false && terraform validate
-          cd ../terraform-k8s && terraform fmt -check -recursive && terraform init -backend=false && terraform validate
+          cd infra/terraform && terraform fmt -check -diff -recursive && terraform init -backend=false && terraform validate
+          cd ../terraform-k8s && terraform fmt -check -diff -recursive && terraform init -backend=false && terraform validate
 
       - name: Validate Kustomize Overlays (Local K8s, On-Prem NVIDIA, Cloud K8s NVIDIA)
         run: |
@@ -137,9 +137,10 @@ jobs:
             --fail-on HIGH \
             --out-dir reports
 
-      - name: Install Ansible & Syntax-Check Playbooks
+      - name: Install Ansible, Collections & Syntax-Check Playbooks
         run: |
           pip install --no-cache-dir ansible-core==2.17.7
+          ansible-galaxy collection install -r ansible/requirements.yml
           cd ansible
           ansible-playbook --syntax-check playbooks/site.yml
           ansible-playbook --syntax-check playbooks/setup_nvidia_gpu.yml

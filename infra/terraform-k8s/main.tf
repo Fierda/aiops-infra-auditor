@@ -5,11 +5,11 @@ resource "kubernetes_namespace" "aiops" {
   metadata {
     name = var.namespace
     labels = {
-      "app.kubernetes.io/part-of"           = "aiops-infra-auditor"
-      "aiops.security/target"               = var.deployment_target
-      "pod-security.kubernetes.io/enforce"  = "baseline"
-      "pod-security.kubernetes.io/audit"    = "restricted"
-      "pod-security.kubernetes.io/warn"     = "restricted"
+      "app.kubernetes.io/part-of"          = "aiops-infra-auditor"
+      "aiops.security/target"              = var.deployment_target
+      "pod-security.kubernetes.io/enforce" = "baseline"
+      "pod-security.kubernetes.io/audit"   = "restricted"
+      "pod-security.kubernetes.io/warn"    = "restricted"
     }
   }
 }
