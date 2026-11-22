@@ -1,0 +1,91 @@
+# Open-Source Model Profiles for AIOps Infra Auditor
+# All production GPU profiles are strictly engineered to fit within <= 16 GB VRAM
+# (e.g., NVIDIA T4 16GB, RTX 4060 Ti 16GB, RTX 4080 16GB, A4000 16GB, L4 24GB).
+
+default_profile: local-dev
+
+profiles:
+  offline-heuristic:
+    tier: offline
+    backend: heuristic
+    model: deterministic-rule-engine
+    license: Internal
+    vram_gb_required: 0.0
+    ram_gb_required: 0.5
+    context_window: 8192
+    temperature: 0.0
+    timeout_sec: 15
+    description: Deterministic SAST/SCA/IaC/Secret auditing without an LLM server.
+
+  local-tiny:
+    tier: local_test
+    backend: ollama
+    model: qwen2.5-coder:1.5b
+    license: Apache-2.0
+    vram_gb_required: 1.5
+    ram_gb_required: 4.0
+    context_window: 8192
+    temperature: 0.1
+    timeout_sec: 60
+    description: Ultra-light open-source coder model for fast CPU smoke testing.
+
+  local-dev:
+    tier: local_test
+    backend: ollama
+    model: qwen2.5-coder:3b
+    license: Apache-2.0
+    vram_gb_required: 2.5
+    ram_gb_required: 6.0
+    context_window: 16384
+    temperature: 0.1
+    timeout_sec: 90
+    description: Default local testing model for laptops (CPU or entry-level GPU).
+
+  local-8gb:
+    tier: local_test
+    backend: ollama
+    model: qwen2.5-coder:7b
+    license: Apache-2.0
+    vram_gb_required: 5.8
+    ram_gb_required: 10.0
+    context_window: 16384
+    temperature: 0.1
+    timeout_sec: 120
+    description: Mid-tier open-source coder model for 8GB VRAM GPUs (RTX 3060/4060).
+
+  prod-16gb-coder:
+    tier: prod_16gb
+    backend: ollama
+    model: qwen2.5-coder:14b-instruct-q4_K_M
+    license: Apache-2.0
+    vram_gb_required: 12.5
+    ram_gb_required: 16.0
+    context_window: 16384
+    temperature: 0.05
+    timeout_sec: 180
+    description: Prod-grade <=16GB VRAM open-source coder model (best JSON reliability & patch accuracy).
+
+  prod-16gb-reasoning:
+    tier: prod_16gb
+    backend: ollama
+    model: deepseek-r1:14b
+    license: MIT
+    vram_gb_required: 12.8
+    ram_gb_required: 16.0
+    context_window: 16384
+    temperature: 0.1
+    timeout_sec: 240
+    description: Prod-grade <=16GB VRAM reasoning model for deep multi-hop taint & deserialization chains.
+
+  prod-16gb-vllm:
+    tier: prod_16gb
+    backend: openai_compat
+    model: Qwen/Qwen2.5-Coder-14B-Instruct-AWQ
+    license: Apache-2.0
+    vram_gb_required: 11.8
+    ram_gb_required: 16.0
+    context_window: 16384
+    temperature: 0.05
+    timeout_sec: 120
+    description: High-throughput <=16GB VRAM AWQ model served via vLLM OpenAI-compatible API.
+

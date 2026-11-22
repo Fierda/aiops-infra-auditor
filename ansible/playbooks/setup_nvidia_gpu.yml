@@ -1,0 +1,7 @@
+---
+- name: Configure NVIDIA Container Toolkit on GPU-enabled On-Prem or K8s worker nodes
+  hosts: aiops_auditors
+  become: true
+  roles:
+    - role: nvidia_runtime
+

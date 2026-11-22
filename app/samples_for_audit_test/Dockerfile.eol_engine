@@ -1,0 +1,4 @@
+# STATIC AUDIT TEST FIXTURE — EOL PHP C-engine base image
+FROM php:7.4-fpm
+USER 10001
+

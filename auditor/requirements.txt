@@ -1,0 +1,4 @@
+# Core AIOps Auditor runs on Python 3.10+ standard library with zero mandatory runtime deps.
+# Optional packages for enhanced YAML parsing and test runners:
+PyYAML==6.0.2
+

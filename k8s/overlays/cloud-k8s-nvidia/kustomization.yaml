@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Platform-Agnostic Cloud Kubernetes Overlay (EKS / GKE / AKS / DOKS / OVH / RKE2)
+# Uses only standard Kubernetes APIs + NVIDIA Device Plugin / GPU Operator conventions.
+resources:
+  - ../../base
+  - app-hpa.yaml
+
+patches:
+  - path: patch-cloud-nvidia.yaml
+

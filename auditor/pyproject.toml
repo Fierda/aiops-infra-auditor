@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiops-auditor"
+version = "1.0.0"
+description = "Prod-grade AIOps Security Auditor combining SAST, SCA, IaC scanning, and open-source LLM agents (<=16GB VRAM)"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+full = [
+  "PyYAML>=6.0.2",
+]
+dev = [
+  "pytest>=8.3.0",
+]
+
+[project.scripts]
+aiops-auditor = "aiops_auditor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

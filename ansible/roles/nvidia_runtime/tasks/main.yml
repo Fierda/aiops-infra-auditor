@@ -1,0 +1,87 @@
+---
+# Distro-agnostic NVIDIA Container Toolkit setup for On-Prem Docker & K8s (containerd/k3s)
+- name: Detect NVIDIA PCI GPU device on host
+  ansible.builtin.command:
+    cmd: lspci -nn
+  register: pci_devices
+  changed_when: false
+  failed_when: false
+
+- name: Set NVIDIA GPU detected fact
+  ansible.builtin.set_fact:
+    nvidia_gpu_detected: "{{ 'NVIDIA' in (pci_devices.stdout | default('')) }}"
+
+- name: Configure NVIDIA Container Toolkit APT GPG key (Debian/Ubuntu)
+  ansible.builtin.get_url:
+    url: https://nvidia.github.io/libnvidia-container/gpgkey
+    dest: /etc/apt/keyrings/nvidia-container-toolkit.asc
+    mode: "0644"
+  when:
+    - nvidia_gpu_detected | bool
+    - ansible_os_family == "Debian"
+
+- name: Add NVIDIA Container Toolkit APT repository (Debian/Ubuntu)
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit.asc] https://nvidia.github.io/libnvidia-container/stable/deb/$(ARCH) /"
+    filename: nvidia-container-toolkit
+    state: present
+  when:
+    - nvidia_gpu_detected | bool
+    - ansible_os_family == "Debian"
+
+- name: Install nvidia-container-toolkit on Debian/Ubuntu
+  ansible.builtin.apt:
+    name: nvidia-container-toolkit
+    state: present
+    update_cache: true
+  when:
+    - nvidia_gpu_detected | bool
+    - ansible_os_family == "Debian"
+
+- name: Add NVIDIA Container Toolkit YUM/DNF repo (RHEL/Rocky/AlmaLinux)
+  ansible.builtin.get_url:
+    url: https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo
+    dest: /etc/yum.repos.d/nvidia-container-toolkit.repo
+    mode: "0644"
+  when:
+    - nvidia_gpu_detected | bool
+    - ansible_os_family == "RedHat"
+
+- name: Install nvidia-container-toolkit on RHEL/Rocky/AlmaLinux
+  ansible.builtin.dnf:
+    name: nvidia-container-toolkit
+    state: present
+  when:
+    - nvidia_gpu_detected | bool
+    - ansible_os_family == "RedHat"
+
+- name: Configure NVIDIA runtime for Docker (if Docker is installed)
+  ansible.builtin.command:
+    cmd: nvidia-ctk runtime configure --runtime=docker
+  when: nvidia_gpu_detected | bool
+  register: docker_nvidia_cfg
+  failed_when: false
+  changed_when: docker_nvidia_cfg.rc == 0
+
+- name: Configure NVIDIA runtime for containerd (On-Prem K8s / k3s / kubeadm)
+  ansible.builtin.command:
+    cmd: nvidia-ctk runtime configure --runtime=containerd
+  when: nvidia_gpu_detected | bool
+  register: containerd_nvidia_cfg
+  failed_when: false
+  changed_when: containerd_nvidia_cfg.rc == 0
+
+- name: Verify NVIDIA GPU VRAM availability via nvidia-smi
+  ansible.builtin.command:
+    cmd: nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+  register: nvidia_smi_check
+  when: nvidia_gpu_detected | bool
+  changed_when: false
+  failed_when: false
+
+- name: Report NVIDIA GPU runtime status
+  ansible.builtin.debug:
+    msg: >-
+      {{ nvidia_smi_check.stdout if (nvidia_gpu_detected | bool and nvidia_smi_check.rc == 0)
+         else 'No active NVIDIA GPU driver detected; falling back to local CPU profile.' }}
+

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiops-auditor-config
+  namespace: aiops-auditor
+data:
+  AIOPS_MODEL_PROFILE: "local-dev"
+  AIOPS_FAIL_ON_SEVERITY: "HIGH"
+  AIOPS_ENABLE_OSV_LOOKUP: "false"
+  OLLAMA_BASE_URL: "http://ollama.aiops-auditor.svc.cluster.local:11434"
+  VLLM_BASE_URL: "http://vllm.aiops-auditor.svc.cluster.local:8000/v1"
+  OLLAMA_FLASH_ATTENTION: "1"
+  OLLAMA_KV_CACHE_TYPE: "q8_0"
+  OLLAMA_MAX_LOADED_MODELS: "1"
+  OLLAMA_NUM_PARALLEL: "2"
+

@@ -1,0 +1,85 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: aiops-auditor
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-auditor-to-llm-and-dns
+  namespace: aiops-auditor
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: security-scanner
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: llm-runtime
+      ports:
+        - protocol: TCP
+          port: 11434
+        - protocol: TCP
+          port: 8000
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Optional HTTPS egress for OSV.dev advisory queries
+    - ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-llm-ingress-from-auditor
+  namespace: aiops-auditor
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: llm-runtime
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: security-scanner
+      ports:
+        - protocol: TCP
+          port: 11434
+        - protocol: TCP
+          port: 8000
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Outbound HTTPS for pulling open-source model weights from Ollama/HuggingFace
+    - ports:
+        - protocol: TCP
+          port: 443
+

@@ -1,0 +1,7 @@
+---
+- name: Deploy or update AIOps Auditor and pull configured LLM profile
+  hosts: aiops_auditors
+  become: true
+  roles:
+    - role: aiops_auditor
+

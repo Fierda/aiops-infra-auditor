@@ -1,0 +1,12 @@
+---
+aiops_model_profile: "local-dev"
+aiops_model_map:
+  local-tiny: "qwen2.5-coder:1.5b"
+  local-dev: "qwen2.5-coder:3b"
+  local-8gb: "qwen2.5-coder:7b"
+  prod-16gb-coder: "qwen2.5-coder:14b-instruct-q4_K_M"
+  prod-16gb-reasoning: "deepseek-r1:14b"
+audit_target_dir: "/opt/aiops-auditor/targets"
+audit_reports_dir: "/var/log/aiops-auditor/reports"
+audit_schedule: "*-*-* 02:00:00"
+

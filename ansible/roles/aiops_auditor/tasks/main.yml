@@ -1,0 +1,132 @@
+---
+- name: Ensure dedicated non-root auditor user exists
+  ansible.builtin.user:
+    name: aiops-auditor
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: true
+
+- name: Create AIOps Auditor directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: aiops-auditor
+    group: aiops-auditor
+    mode: "0750"
+  loop:
+    - /opt/aiops-auditor
+    - "{{ audit_target_dir }}"
+    - "{{ audit_reports_dir }}"
+
+- name: Sync AIOps Auditor engine and config
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../auditor/"
+    dest: /opt/aiops-auditor/
+    owner: aiops-auditor
+    group: aiops-auditor
+    mode: "0640"
+
+- name: Detect NVIDIA GPU presence for <=16GB VRAM prod acceleration
+  ansible.builtin.command:
+    cmd: nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+  register: gpu_probe
+  failed_when: false
+  changed_when: false
+
+- name: Display detected GPU hardware
+  ansible.builtin.debug:
+    msg: "GPU status: {{ gpu_probe.stdout if gpu_probe.rc == 0 else 'CPU-only (use local-tiny or local-dev profile)' }}"
+
+- name: Deploy systemd unit for Ollama open-source LLM runtime
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/aiops-ollama.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Ollama Open-Source LLM Engine for AIOps Auditor
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      Restart=always
+      RestartSec=5
+      ExecStartPre=-/usr/bin/docker rm -f aiops-ollama
+      ExecStart=/usr/bin/docker run --rm --name aiops-ollama \
+        {{ '--gpus all' if gpu_probe.rc == 0 else '' }} \
+        --security-opt no-new-privileges:true \
+        -p 127.0.0.1:11434:11434 \
+        -e OLLAMA_FLASH_ATTENTION=1 \
+        -e OLLAMA_KV_CACHE_TYPE=q8_0 \
+        -e OLLAMA_MAX_LOADED_MODELS=1 \
+        -v ollama_models:/root/.ollama \
+        ollama/ollama:0.6.2
+      ExecStop=/usr/bin/docker stop aiops-ollama
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Start Ollama runtime service
+  ansible.builtin.systemd:
+    name: aiops-ollama
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Pull configured open-source model for profile {{ aiops_model_profile }}
+  ansible.builtin.command:
+    cmd: "docker exec aiops-ollama ollama pull {{ aiops_model_map[aiops_model_profile] }}"
+  when: aiops_model_profile in aiops_model_map
+  retries: 3
+  delay: 10
+  register: pull_result
+  until: pull_result.rc == 0
+  changed_when: "'pulling' in pull_result.stdout or 'success' in pull_result.stdout"
+
+- name: Install systemd service & timer for scheduled continuous security audits
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/aiops-auditor-scan.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=AIOps Autonomous Security Auditor Scan
+      After=aiops-ollama.service
+
+      [Service]
+      Type=oneshot
+      User=aiops-auditor
+      Group=aiops-auditor
+      ProtectSystem=strict
+      ReadWritePaths={{ audit_reports_dir }}
+      PrivateTmp=true
+      NoNewPrivileges=true
+      Environment=PYTHONPATH=/opt/aiops-auditor/src
+      Environment=AIOPS_MODEL_PROFILE={{ aiops_model_profile }}
+      Environment=OLLAMA_BASE_URL=http://127.0.0.1:11434
+      ExecStart=/usr/bin/python3 -m aiops_auditor scan \
+        --target {{ audit_target_dir }} \
+        --profile {{ aiops_model_profile }} \
+        --out-dir {{ audit_reports_dir }} \
+        --no-fail
+
+- name: Install systemd timer for daily continuous auditing
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/aiops-auditor-scan.timer
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Run AIOps Security Audit daily
+
+      [Timer]
+      OnCalendar={{ audit_schedule }}
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+
+- name: Enable scheduled audit timer
+  ansible.builtin.systemd:
+    name: aiops-auditor-scan.timer
+    daemon_reload: true
+    enabled: true
+    state: started
+

@@ -1,0 +1,94 @@
+---
+- name: Install baseline security packages on Debian/Ubuntu
+  ansible.builtin.apt:
+    name:
+      - ufw
+      - fail2ban
+      - unattended-upgrades
+      - auditd
+      - docker.io
+      - docker-compose-v2
+      - python3
+      - python3-venv
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+
+- name: Install baseline security packages on RHEL/Rocky/AlmaLinux
+  ansible.builtin.dnf:
+    name:
+      - firewalld
+      - fail2ban
+      - dnf-automatic
+      - audit
+      - podman-docker
+      - python3
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Apply CIS-aligned SSH daemon hardening
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/99-aiops-hardening.conf
+    mode: "0600"
+    owner: root
+    group: root
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      X11Forwarding no
+      MaxAuthTries 3
+      AllowAgentForwarding no
+      AllowTcpForwarding no
+      ClientAliveInterval 300
+      ClientAliveCountMax 2
+  notify: Restart sshd
+
+- name: Apply kernel network & memory hardening via sysctl
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: true
+  loop:
+    - { key: "net.ipv4.conf.all.rp_filter", value: "1" }
+    - { key: "net.ipv4.conf.all.accept_redirects", value: "0" }
+    - { key: "net.ipv4.conf.all.send_redirects", value: "0" }
+    - { key: "net.ipv4.tcp_syncookies", value: "1" }
+    - { key: "kernel.kptr_restrict", value: "2" }
+    - { key: "kernel.dmesg_restrict", value: "1" }
+
+- name: Configure default-deny UFW firewall policy (Debian/Ubuntu)
+  community.general.ufw:
+    direction: incoming
+    policy: deny
+  when: ansible_os_family == "Debian"
+
+- name: Allow SSH from private management networks only (Debian/Ubuntu)
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+    src: "10.0.0.0/8"
+  when: ansible_os_family == "Debian"
+
+- name: Enable UFW firewall (Debian/Ubuntu)
+  community.general.ufw:
+    state: enabled
+  when: ansible_os_family == "Debian"
+
+- name: Ensure firewalld is enabled on RHEL/Rocky/AlmaLinux
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+  when: ansible_os_family == "RedHat"
+
+- name: Ensure fail2ban and auditd are enabled and running
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - fail2ban
+    - auditd

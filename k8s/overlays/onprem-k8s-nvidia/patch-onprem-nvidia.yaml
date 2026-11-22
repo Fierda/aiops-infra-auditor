@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiops-auditor-config
+  namespace: aiops-auditor
+data:
+  # Prod <=16GB VRAM open-source coder model (or switch to prod-16gb-reasoning for DeepSeek-R1 14B)
+  AIOPS_MODEL_PROFILE: "prod-16gb-coder"
+  AIOPS_ENABLE_OSV_LOOKUP: "true"
+  OLLAMA_FLASH_ATTENTION: "1"
+  OLLAMA_KV_CACHE_TYPE: "q8_0"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ollama
+  namespace: aiops-auditor
+spec:
+  template:
+    spec:
+      # Standard NVIDIA GPU Operator / Device Plugin runtime class
+      runtimeClassName: nvidia
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      nodeSelector:
+        # Auto-labeled by NVIDIA GPU Operator (Node Feature Discovery)
+        nvidia.com/gpu.present: "true"
+      containers:
+        - name: ollama
+          env:
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,utility"
+          resources:
+            requests:
+              cpu: "2000m"
+              memory: "8Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "6000m"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+

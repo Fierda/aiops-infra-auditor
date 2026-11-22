@@ -1,0 +1,7 @@
+---
+- name: Deploy or update application service with health check verification
+  hosts: app_servers
+  become: true
+  roles:
+    - role: app_runtime
+

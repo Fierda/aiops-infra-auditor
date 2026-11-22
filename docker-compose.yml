@@ -1,0 +1,151 @@
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Hardened Sample Application
+  # ----------------------------------------------------------------------------
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: aiops-sample-app
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - APP_PORT=8080
+      - APP_LOG_LEVEL=${APP_LOG_LEVEL:-INFO}
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - aiops_internal
+
+  # ----------------------------------------------------------------------------
+  # 2a. Local Test LLM Runtime (CPU / Small Open-Source Model: 1.5B - 3B)
+  #     Start with: docker compose --profile local up -d
+  # ----------------------------------------------------------------------------
+  ollama-local:
+    image: ollama/ollama:0.6.2
+    container_name: aiops-ollama-local
+    profiles: ["local"]
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_KEEP_ALIVE=10m
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks:
+      - aiops_internal
+
+  # ----------------------------------------------------------------------------
+  # 2b. Prod-Grade LLM Runtime (<=16GB VRAM GPU Open-Source Model: 14B Q4_K_M)
+  #     Start with: docker compose --profile prod-gpu up -d
+  # ----------------------------------------------------------------------------
+  ollama-prod-gpu:
+    image: ollama/ollama:0.6.2
+    container_name: aiops-ollama-prod
+    profiles: ["prod-gpu"]
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=q8_0
+      - OLLAMA_KEEP_ALIVE=30m
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks:
+      - aiops_internal
+
+  # ----------------------------------------------------------------------------
+  # 2c. Optional Prod High-Throughput Serving via vLLM (<=16GB VRAM, AWQ 14B)
+  #     Start with: docker compose --profile prod-vllm up -d
+  # ----------------------------------------------------------------------------
+  vllm-prod-gpu:
+    image: vllm/vllm-openai:v0.7.3
+    container_name: aiops-vllm-prod
+    profiles: ["prod-vllm"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    command: >
+      --model Qwen/Qwen2.5-Coder-14B-Instruct-AWQ
+      --quantization awq_marlin
+      --dtype half
+      --gpu-memory-utilization 0.88
+      --max-model-len 16384
+      --enable-prefix-caching
+      --api-key ${VLLM_API_KEY:-change-me-in-prod}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - aiops_internal
+
+  # ----------------------------------------------------------------------------
+  # 3. AIOps Security Auditor Runner (Mounts target repos read-only!)
+  # ----------------------------------------------------------------------------
+  auditor:
+    build:
+      context: ./auditor
+      dockerfile: Dockerfile
+    container_name: aiops-auditor
+    profiles: ["local", "prod-gpu", "prod-vllm"]
+    environment:
+      - AIOPS_MODEL_PROFILE=${AIOPS_MODEL_PROFILE:-local-dev}
+      - OLLAMA_BASE_URL=http://ollama-local:11434
+      - VLLM_BASE_URL=http://vllm-prod-gpu:8000/v1
+      - VLLM_API_KEY=${VLLM_API_KEY:-change-me-in-prod}
+    volumes:
+      - .:/workspace:ro
+      - ./reports:/reports:rw
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    command: ["scan", "--target", "/workspace", "--out-dir", "/reports", "--no-fail"]
+    networks:
+      - aiops_internal
+
+volumes:
+  ollama_models:
+  hf_cache:
+
+networks:
+  aiops_internal:
+    driver: bridge
+

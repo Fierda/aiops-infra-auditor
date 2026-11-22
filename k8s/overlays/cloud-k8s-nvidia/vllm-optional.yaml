@@ -1,0 +1,105 @@
+# Optional High-Throughput vLLM OpenAI-Compatible Serving (<=16GB VRAM, AWQ 14B)
+# Apply manually when switching AIOPS_MODEL_PROFILE=prod-16gb-vllm on a 16GB+ NVIDIA GPU node:
+#   kubectl apply -f k8s/overlays/cloud-k8s-nvidia/vllm-optional.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  namespace: aiops-auditor
+  labels:
+    app.kubernetes.io/name: vllm
+    app.kubernetes.io/component: llm-runtime
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vllm
+        app.kubernetes.io/component: llm-runtime
+    spec:
+      automountServiceAccountToken: false
+      runtimeClassName: nvidia
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        runAsGroup: 10002
+        fsGroup: 10002
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.7.3
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--model"
+            - "Qwen/Qwen2.5-Coder-14B-Instruct-AWQ"
+            - "--quantization"
+            - "awq_marlin"
+            - "--dtype"
+            - "half"
+            - "--gpu-memory-utilization"
+            - "0.88"
+            - "--max-model-len"
+            - "16384"
+            - "--enable-prefix-caching"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: HF_HOME
+              value: /cache/huggingface
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,utility"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "2000m"
+              memory: "8Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8000m"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /cache/huggingface
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: hf-cache
+          emptyDir:
+            sizeLimit: 20Gi
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm
+  namespace: aiops-auditor
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: vllm
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+

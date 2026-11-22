@@ -1,0 +1,71 @@
+---
+- name: Ensure dedicated non-root application user exists
+  ansible.builtin.user:
+    name: appuser
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create application deployment directory
+  ansible.builtin.file:
+    path: /opt/aiops-app
+    state: directory
+    owner: appuser
+    group: appuser
+    mode: "0750"
+
+- name: Sync application source files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../app/"
+    dest: /opt/aiops-app/
+    owner: appuser
+    group: appuser
+    mode: "0640"
+
+- name: Build hardened application container image
+  ansible.builtin.command:
+    cmd: docker build -t aiops-sample-app:{{ env_name | default('dev') }} /opt/aiops-app
+  changed_when: true
+
+- name: Deploy systemd unit for hardened application container
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/aiops-app.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=AIOPS Sample Hardened Application
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      Restart=always
+      RestartSec=5
+      ExecStartPre=-/usr/bin/docker rm -f aiops-sample-app
+      ExecStart=/usr/bin/docker run --rm --name aiops-sample-app \
+        --read-only --tmpfs /tmp:noexec,nosuid,size=64m \
+        --security-opt no-new-privileges:true \
+        --cap-drop ALL \
+        -p 127.0.0.1:8080:8080 \
+        -e APP_ENV={{ env_name | default('prod') }} \
+        aiops-sample-app:{{ env_name | default('dev') }}
+      ExecStop=/usr/bin/docker stop aiops-sample-app
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart aiops-app
+
+- name: Enable and start aiops-app service
+  ansible.builtin.systemd:
+    name: aiops-app
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Verify application /healthz endpoint responds healthy
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/healthz
+    method: GET
+    status_code: 200
+  retries: 5
+  delay: 3
+

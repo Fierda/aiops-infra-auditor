@@ -1,0 +1,7 @@
+---
+- name: Restart aiops-app
+  ansible.builtin.systemd:
+    name: aiops-app
+    daemon_reload: true
+    state: restarted
+

@@ -1,0 +1,51 @@
+stages:
+  - test
+  - aiops_audit
+  - infra_provision
+  - ansible_deploy
+
+variables:
+  PYTHONPATH: "auditor/src"
+  # Switch to prod-16gb-coder or prod-16gb-reasoning on self-hosted <=16GB VRAM GPU runners
+  AIOPS_MODEL_PROFILE: "prod-16gb-coder"
+
+unit_tests:
+  stage: test
+  image: python:3.12-slim
+  script:
+    - python -m unittest discover -s tests -p "test_*.py" -v
+
+aiops_gpu_security_audit:
+  stage: aiops_audit
+  image: python:3.12-slim
+  # Assign to self-hosted <=16GB VRAM GPU runner (e.g., T4 16GB / RTX 4060 Ti 16GB)
+  # tags:
+  #   - gpu-16gb
+  script:
+    - python -m aiops_auditor scan --target . --profile "${AIOPS_MODEL_PROFILE}" --fail-on HIGH --out-dir reports
+  artifacts:
+    when: always
+    paths:
+      - reports/audit-report.json
+      - reports/audit-report.md
+      - reports/audit-report.sarif
+
+terraform_validate:
+  stage: infra_provision
+  image: hashicorp/terraform:1.9.8
+  script:
+    - cd infra/terraform
+    - terraform fmt -check -recursive
+    - terraform init -backend=false
+    - terraform validate
+
+ansible_syntax_and_deploy:
+  stage: ansible_deploy
+  image: python:3.12-slim
+  script:
+    - pip install --no-cache-dir ansible-core==2.17.7
+    - cd ansible
+    - ansible-playbook --syntax-check playbooks/site.yml
+  only:
+    - main
+

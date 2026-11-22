@@ -1,0 +1,33 @@
+# STATIC AUDIT TEST FIXTURE — Demonstrates insecure Kubernetes Pod & RBAC anti-patterns
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insecure-k8s-fixture
+spec:
+  template:
+    spec:
+      hostPID: true
+      containers:
+        - name: app
+          image: nginx:latest
+          securityContext:
+            privileged: true
+            runAsUser: 0
+            allowPrivilegeEscalation: true
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+      volumes:
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: overly-permissive-fixture
+rules:
+  - apiGroups: [""]
+    resources: ["*"]
+    verbs: ["*"]
+

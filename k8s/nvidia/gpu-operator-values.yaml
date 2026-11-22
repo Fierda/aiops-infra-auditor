@@ -1,0 +1,34 @@
+# Platform-Agnostic NVIDIA GPU Operator Helm Values
+# Works identically across On-Prem K8s (k3s / kubeadm / RKE2) and Cloud K8s (EKS / GKE / AKS)
+#
+# Install:
+#   helm repo add nvidia https://helm.ngc.nvidia.com/nvidia && helm repo update
+#   helm upgrade --install gpu-operator nvidia/gpu-operator \
+#     -n gpu-operator --create-namespace \
+#     -f k8s/nvidia/gpu-operator-values.yaml
+
+operator:
+  defaultRuntime: containerd
+
+# Set driver.enabled=false on managed cloud GPU node pools that pre-install NVIDIA drivers
+# (e.g., AWS EKS AL2023 GPU AMI, GKE COS GPU, AKS GPU node pools).
+# Keep driver.enabled=true on bare-metal on-prem clusters without pre-installed drivers.
+driver:
+  enabled: false
+
+toolkit:
+  enabled: true
+
+devicePlugin:
+  enabled: true
+
+# Node Feature Discovery auto-labels GPU nodes (nvidia.com/gpu.present=true, product, memory)
+nfd:
+  enabled: true
+
+# DCGM Exporter exposes Prometheus GPU VRAM / temperature / utilization metrics for AIOps!
+dcgmExporter:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+

@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiops-auditor-config
+  namespace: aiops-auditor
+data:
+  AIOPS_MODEL_PROFILE: "prod-16gb-coder"
+  AIOPS_ENABLE_OSV_LOOKUP: "true"
+  OLLAMA_FLASH_ATTENTION: "1"
+  OLLAMA_KV_CACHE_TYPE: "q8_0"
+  OLLAMA_NUM_PARALLEL: "2"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ollama
+  namespace: aiops-auditor
+spec:
+  template:
+    spec:
+      # Works across EKS, GKE, AKS, DOKS, and RKE2 with NVIDIA Device Plugin / GPU Operator.
+      # If your managed cloud GPU pool uses default containerd nvidia runtime without a separate
+      # RuntimeClass object, remove `runtimeClassName: nvidia` or create the RuntimeClass.
+      runtimeClassName: nvidia
+      tolerations:
+        # Standard GPU taint used across EKS, GKE, AKS, and NVIDIA GPU Operator
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+        - key: "sku"
+          operator: "Equal"
+          value: "gpu"
+          effect: "NoSchedule"
+      containers:
+        - name: ollama
+          env:
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,utility"
+          resources:
+            requests:
+              cpu: "2000m"
+              memory: "8Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8000m"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+

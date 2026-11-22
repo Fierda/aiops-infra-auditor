@@ -1,0 +1,27 @@
+# AIOps Security Policy Gate Configuration
+fail_on_severity: HIGH
+max_llm_findings: 25
+context_lines_before: 18
+context_lines_after: 18
+enable_osv_lookup: false
+auto_sync_cve: false
+cve_kb_ttl_hours: 6
+enable_autonomous_agent: true
+max_agent_steps: 6
+
+excluded_dirs:
+  - .git
+  - .terraform
+  - node_modules
+  - vendor
+  - .venv
+  - venv
+  - __pycache__
+  - dist
+  - build
+  - reports
+  - samples_for_audit_test
+  - tests
+
+allowed_false_positive_suppression: true
+
