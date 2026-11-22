@@ -9,30 +9,54 @@ Designed as a **Pre-Deploy & Config-Change Gatekeeper**: whenever **IaC**, **Ans
 ## 1. E2E Change-Triggered Pre-Deploy Workflow
 
 ```mermaid
-flowchart TD
-    CHG["Code / Infra / Config Change Triggered"] --> SPLIT{"Which Layer Changed?"}
+flowchart LR
+    classDef trigger fill:#1e293b,stroke:#64748b,stroke-width:1.5px,color:#f8fafc
+    classDef gate fill:#1d4ed8,stroke:#60a5fa,stroke-width:1.5px,color:#ffffff
+    classDef intel fill:#0f766e,stroke:#2dd4bf,stroke-width:1.5px,color:#f0fdfa
+    classDef scanner fill:#334155,stroke:#94a3b8,stroke-width:1.5px,color:#f8fafc
+    classDef ai fill:#6d28d9,stroke:#c084fc,stroke-width:1.5px,color:#faf5ff
+    classDef decision fill:#b45309,stroke:#fbbf24,stroke-width:2px,color:#fffbeb
+    classDef block fill:#be123c,stroke:#fb7185,stroke-width:2px,color:#fff1f2
+    classDef allow fill:#047857,stroke:#34d399,stroke-width:2px,color:#ecfdf5
 
-    SPLIT -->|Terraform / K8s / Compose| G_IAC["Gate 1: aiops-auditor gate --stage iac"]
-    SPLIT -->|Playbooks / Roles / Vars| G_ANS["Gate 2: aiops-auditor gate --stage ansible"]
-    SPLIT -->|App / Native C-C++-ASM / Deps| G_APP["Gate 3: aiops-auditor gate --stage app"]
-
-    G_IAC --> ENGINE["AIOps Hybrid Audit Engine"]
-    G_ANS --> ENGINE
-    G_APP --> ENGINE
-
-    subgraph ENGINE ["AIOps Hybrid Audit Engine"]
+    subgraph TRIGGERS ["1. Change Triggers & Pre-Deploy Gates"]
         direction TB
-        SYNC["Stage 0: Auto-Sync Live CVE KB (CISA KEV + OSV.dev + NVD)"]
-        STATIC["Stage 1: Multi-Layer Discovery (SAST App + C/C++/ASM + Build Flags + SCA + IaC/K8s + Secrets)"]
-        SLICE["Stage 2: Cross-File Caller Index & Context Slicing"]
-        TRIAGE["Stage 3a: LLM Triage & Patch Agent (Anti-Prompt-Injection)"]
-        REACT["Stage 3b: Autonomous ReAct Investigation Agent (Tool-Use Loop)"]
-        SYNC --> STATIC --> SLICE --> TRIAGE --> REACT
+        T1["IaC Change: Terraform / K8s"]:::trigger --> G1["Gate: --stage iac"]:::gate
+        T2["Config Change: Ansible / NVIDIA"]:::trigger --> G2["Gate: --stage ansible"]:::gate
+        T3["Code Change: App + C / C++ / ASM"]:::trigger --> G3["Gate: --stage app"]:::gate
     end
 
-    REACT --> POLICY{"Policy Gate (>= HIGH / CRITICAL)?"}
-    POLICY -->|"FAIL (Findings Detected)"| BLOCK["BLOCK Deploy / Config Change + Emit SARIF / MD / JSON + Patch"]
-    POLICY -->|"PASS (0 Active >= HIGH)"| DEPLOY["ALLOW Deploy: Terraform Apply / Ansible Playbook / K8s Rollout"]
+    subgraph ENGINE ["2. AIOps Hybrid Audit Engine (3B Local / 14B <=16GB VRAM)"]
+        direction LR
+        subgraph DISCOVERY ["Discovery & Threat Intel"]
+            direction TB
+            KB["Stage 0: Live CVE KB Sync (CISA KEV + OSV + NVD)"]:::intel
+            S1["Stage 1: Multi-Layer SAST + C/C++/ASM + Build Flags + SCA + IaC/K8s"]:::scanner
+            KB --> S1
+        end
+        SLICE["Stage 2: Cross-File Caller Index & Nonce Slicer"]:::scanner
+        subgraph AGENTS ["Open-Source AI Agents"]
+            direction TB
+            A1["Stage 3a: LLM Triage & Patch Agent"]:::ai
+            A2["Stage 3b: Autonomous ReAct Hunter (Tool-Use Loop)"]:::ai
+            A1 --> A2
+        end
+        S1 --> SLICE --> A1
+    end
+
+    subgraph OUTCOME ["3. Policy Decision & Rollout"]
+        direction TB
+        POL{"Findings >= HIGH?"}:::decision
+        BLK["BLOCK Deploy / Config Change + SARIF / MD / Patch"]:::block
+        OK["ALLOW Rollout: Terraform / Ansible / K8s"]:::allow
+        POL -->|"YES (Fail)"| BLK
+        POL -->|"NO (Pass)"| OK
+    end
+
+    G1 --> S1
+    G2 --> S1
+    G3 --> S1
+    A2 --> POL
 ```
 
 ---
@@ -44,33 +68,42 @@ Local open-source models (3B / 14B `<= 16GB VRAM`) have fixed training cutoffs. 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Dev as Developer / CI-CD / CronJob
+    participant CI as Dev / CI-CD / CronJob
     participant Orch as AIOps Orchestrator
-    participant KB as Live CVE Knowledge Base (cve_kb.json)
+    participant KB as Local CVE KB (cve_kb.json)
     participant Feeds as CISA KEV / OSV.dev / NVD
     participant Scan as Static Scanners (App + C/C++/ASM + IaC)
-    participant Agent as Autonomous AI Agent (3B Local / 14B <=16GB VRAM)
+    participant AI as AI Agent (3B Local / 14B <=16GB VRAM)
 
-    Dev->>Orch: Trigger scan / pre-deploy gate (--auto-sync-cve)
-    Orch->>Feeds: Fetch CISA KEV + OSV.dev (project deps) + optional NVD
-    Feeds-->>KB: Persist brand-new CVEs, fixed versions & official mitigations
-    Orch->>Scan: Run SAST (PHP/Node/Java/Py/C/C++/ASM), SCA (w/ Live KB), IaC/K8s, Secrets
-    Scan-->>Orch: Candidate sinks, vulnerable deps & misconfigs
-
-    loop Single-Shot Triage per Top Candidate
-        Orch->>Agent: Nonce-wrapped code slice + imports + cross-file callers
-        Agent-->>Orch: JSON Verdict (confirmed/false_positive + taint_analysis + patch)
+    rect rgba(15, 118, 110, 0.12)
+        Note over Orch,Feeds: Phase 1 — Self-Updating Threat Intelligence (No Manual Web Checks)
+        CI->>Orch: Run scan / pre-deploy gate (--auto-sync-cve)
+        Orch->>Feeds: Fetch CISA KEV + OSV.dev (project deps) + optional NVD
+        Feeds-->>KB: Persist brand-new CVEs, fixed versions & official mitigations
     end
 
-    loop Autonomous ReAct Hunting (max_agent_steps = 6)
-        Agent->>Orch: Tool Call: list_attack_surfaces / read_code_slice / grep_symbol
-        Orch-->>Agent: Nonce-fenced code snippet / cross-file call refs
-        Agent->>KB: Tool Call: lookup_cve_intel (live CISA KEV / OSV / NVD)
-        KB-->>Agent: Actively exploited CVEs + exact upgrade/mitigation steps
-        Agent->>Orch: Tool Call: report_finding (new bug beyond static regex) / finish
+    rect rgba(51, 65, 85, 0.12)
+        Note over Orch,Scan: Phase 2 — Deterministic Multi-Layer Discovery
+        Orch->>Scan: Scan PHP/Node/Java/Py + C/C++/ASM + Build Flags + SCA + IaC/K8s
+        Scan-->>Orch: Prioritized candidates, vulnerable deps & misconfigs
     end
 
-    Orch-->>Dev: Decision (ALLOW / BLOCK) + SARIF 2.1.0 + Markdown + JSON
+    rect rgba(109, 40, 217, 0.12)
+        Note over Orch,AI: Phase 3 — Single-Shot Triage + Autonomous ReAct Hunting
+        loop Top Candidates (Anti-Prompt-Injection Nonce Wrapped)
+            Orch->>AI: Code slice + imports + cross-file callers
+            AI-->>Orch: JSON verdict (confirmed / false_positive + taint + patch)
+        end
+        loop Autonomous ReAct Loop (max_agent_steps = 6)
+            AI->>Orch: list_attack_surfaces / read_code_slice / grep_symbol
+            Orch-->>AI: Nonce-fenced code snippet / cross-file call refs
+            AI->>KB: lookup_cve_intel (fresh CISA KEV / OSV / NVD)
+            KB-->>AI: Actively exploited CVEs + exact upgrade/mitigation steps
+            AI->>Orch: report_finding (bugs beyond static regex) / finish
+        end
+    end
+
+    Orch-->>CI: Gate Decision (ALLOW / BLOCK) + SARIF 2.1.0 + Markdown + JSON
 ```
 
 ---
