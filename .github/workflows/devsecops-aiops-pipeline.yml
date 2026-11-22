@@ -1,15 +1,20 @@
-name: Prod E2E Change-Gated DevSecOps + AIOps Pipeline
+name: Manual AIOps Security Audit & Pre-Deploy Gate (Operator / SRE Trigger)
 
+# Strictly MANUAL trigger only — pushing code NEVER auto-provisions infra or runs changes.
+# Intended to be invoked on-demand by Sysadmin, DevOps, IT Ops, or SRE via GitHub Actions UI ("Run workflow").
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    # Nightly autonomous audit across App, Native C/C++/ASM engines, OSS deps, IaC & Ansible
-    - cron: "0 2 * * *"
   workflow_dispatch:
     inputs:
+      gate_stage:
+        description: "Audit / Pre-Deploy Gate Scope"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - app
+          - iac
+          - ansible
       model_profile:
         description: "AIOps Open-Source LLM Profile"
         required: true
@@ -21,18 +26,27 @@ on:
           - prod-16gb-coder
           - prod-16gb-reasoning
           - prod-16gb-vllm
+      auto_sync_cve:
+        description: "Auto-sync live CVE KB (CISA KEV + OSV.dev) before auditing"
+        required: true
+        default: true
+        type: boolean
+      validate_iac_and_ansible:
+        description: "Also run Terraform fmt/validate, Kustomize build, and Ansible syntax-check (read-only)"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
   security-events: write
-  id-token: write
 
 jobs:
   # ============================================================================
-  # GATE 1: App + Native C/C++/Assembly Engine Pre-Deploy Audit Gate
+  # MANUAL GATE: AIOps Security Audit (Read-Only Analysis + Policy Gate)
   # ============================================================================
-  gate-app-and-native:
-    name: Pre-Deploy Gate — App & Native C/C++/ASM
+  manual-aiops-gate:
+    name: Manual AIOps Security Gate (${{ inputs.gate_stage }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,104 +54,73 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run auditor unit & regression test suite
+      - name: Run auditor unit & regression tests
         env:
           PYTHONPATH: auditor/src
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
-      - name: Blocking AIOps Pre-Deploy Gate (App + Native Engines + OSS SCA)
+      - name: Run Manual AIOps Pre-Deploy / Config-Change Gate
         env:
           PYTHONPATH: auditor/src
-          AIOPS_MODEL_PROFILE: ${{ github.event.inputs.model_profile || 'offline-heuristic' }}
+          GATE_STAGE: ${{ inputs.gate_stage }}
+          MODEL_PROFILE: ${{ inputs.model_profile }}
+          AUTO_SYNC: ${{ inputs.auto_sync_cve }}
         run: |
+          EXTRA_ARGS=""
+          if [ "${AUTO_SYNC}" = "true" ]; then
+            EXTRA_ARGS="--auto-sync-cve --enable-osv"
+          fi
           python -m aiops_auditor gate \
-            --stage app \
+            --stage "${GATE_STAGE}" \
             --repo . \
-            --profile "${AIOPS_MODEL_PROFILE}" \
+            --profile "${MODEL_PROFILE}" \
             --fail-on HIGH \
-            --auto-sync-cve \
-            --enable-osv \
+            ${EXTRA_ARGS} \
             --out-dir reports
 
-      - name: Upload App Gate SARIF 2.1.0
+      - name: Upload SARIF 2.1.0 Audit Report
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: reports/gate-app/audit-report.sarif
-          category: aiops-gate-app
+          sarif_file: reports/gate-${{ inputs.gate_stage }}/audit-report.sarif
+          category: aiops-manual-gate-${{ inputs.gate_stage }}
+
+      - name: Upload Audit Artifacts (Markdown + JSON + SARIF)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiops-gate-${{ inputs.gate_stage }}-reports
+          path: reports/
 
   # ============================================================================
-  # GATE 2: IaC (Terraform + Cloud/On-Prem K8s) Pre-Apply Audit Gate
+  # OPTIONAL READ-ONLY VALIDATION: Terraform, Kustomize & Ansible Syntax Check
+  # (Never runs terraform apply, kubectl apply, or ansible-playbook changes!)
   # ============================================================================
-  gate-and-validate-iac:
-    name: Pre-Apply Gate — IaC (Terraform & K8s)
+  manual-iac-ansible-validation:
+    name: Manual Read-Only IaC & Ansible Syntax Validation
+    if: ${{ inputs.validate_iac_and_ansible == true }}
+    needs: [manual-aiops-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Blocking AIOps Pre-Apply Gate (Terraform + K8s + Docker Compose)
-        env:
-          PYTHONPATH: auditor/src
-          AIOPS_MODEL_PROFILE: ${{ github.event.inputs.model_profile || 'offline-heuristic' }}
-        run: |
-          python -m aiops_auditor gate \
-            --stage iac \
-            --repo . \
-            --profile "${AIOPS_MODEL_PROFILE}" \
-            --fail-on HIGH \
-            --out-dir reports
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.8"
 
-      - name: Validate Terraform (AWS + Platform-Agnostic K8s/NVIDIA)
+      - name: Validate Terraform (AWS + Platform-Agnostic K8s/NVIDIA) — Read-Only
         run: |
           cd infra/terraform && terraform fmt -check -diff -recursive && terraform init -backend=false && terraform validate
           cd ../terraform-k8s && terraform fmt -check -diff -recursive && terraform init -backend=false && terraform validate
 
-      - name: Validate Kustomize Overlays (Local K8s, On-Prem NVIDIA, Cloud K8s NVIDIA)
+      - name: Validate Kustomize Overlays — Read-Only
         run: |
           kubectl kustomize k8s/overlays/local-k8s > /dev/null
           kubectl kustomize k8s/overlays/onprem-k8s-nvidia > /dev/null
           kubectl kustomize k8s/overlays/cloud-k8s-nvidia > /dev/null
 
-      - name: Upload IaC Gate SARIF 2.1.0
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: reports/gate-iac/audit-report.sarif
-          category: aiops-gate-iac
-
-  # ============================================================================
-  # GATE 3: Ansible Server Config-Change Pre-Flight Audit Gate
-  # ============================================================================
-  gate-and-validate-ansible:
-    name: Pre-Change Gate — Ansible Hardening & Config
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Blocking AIOps Pre-Change Gate (Ansible Playbooks & Roles)
-        env:
-          PYTHONPATH: auditor/src
-          AIOPS_MODEL_PROFILE: ${{ github.event.inputs.model_profile || 'offline-heuristic' }}
-        run: |
-          python -m aiops_auditor gate \
-            --stage ansible \
-            --repo . \
-            --profile "${AIOPS_MODEL_PROFILE}" \
-            --fail-on HIGH \
-            --out-dir reports
-
-      - name: Install Ansible, Collections & Syntax-Check Playbooks
+      - name: Validate Ansible Playbooks Syntax — Read-Only
         run: |
           pip install --no-cache-dir ansible-core==2.17.7
           ansible-galaxy collection install -r ansible/requirements.yml
@@ -146,25 +129,3 @@ jobs:
           ansible-playbook --syntax-check playbooks/setup_nvidia_gpu.yml
           ansible-playbook --syntax-check playbooks/deploy_app.yml
           ansible-playbook --syntax-check playbooks/deploy_auditor.yml
-
-      - name: Upload Ansible Gate SARIF 2.1.0
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: reports/gate-ansible/audit-report.sarif
-          category: aiops-gate-ansible
-
-  # ============================================================================
-  # DEPLOY STAGE: Runs ONLY if ALL 3 Pre-Deploy Gates PASS
-  # ============================================================================
-  deploy-approved-changes:
-    name: Execute Approved Deploy / Config Change
-    needs: [gate-app-and-native, gate-and-validate-iac, gate-and-validate-ansible]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deployment Approval Marker
-        run: |
-          echo "All AIOps Pre-Deploy Gates (App/Native + IaC/K8s + Ansible) PASSED."
-          echo "Uncomment your target rollout step below (kubectl apply -k / terraform apply / ansible-playbook)."
