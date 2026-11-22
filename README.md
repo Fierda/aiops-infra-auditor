@@ -1,4 +1,4 @@
-# AIOps Infra Auditor — Prod-Grade E2E Autonomous Security & Pre-Deploy Gate Pipeline
+# AIOps Infra Auditor — E2E Autonomous Security & Pre-Deploy Gate Pipeline
 
 **AIOps Infra Auditor** is a production-grade DevSecOps + AIOps pipeline combining **IaC (Terraform & Platform-Agnostic Kubernetes)**, **Ansible CIS Hardening & NVIDIA Runtime**, a **Hardened Reference App**, and a **Private Autonomous AI Security Agent** powered by open-source LLMs (lightweight models for local laptop testing and `<= 16GB VRAM` models for production).
 
